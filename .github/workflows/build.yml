@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Compilar Nintendo DS
+    name: DSi IA - Nintendo DS
     runs-on: ubuntu-latest
 
     container:
@@ -17,20 +17,15 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
-      # 1. Descargar el proyecto
-      # --------------------------------------------------
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 2. Preparar variables de devkitPro
-      # --------------------------------------------------
       - name: Preparar entorno devkitPro
         shell: bash
         run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH"
 
           echo "DEVKITPRO=$DEVKITPRO"
           echo "DEVKITARM=$DEVKITARM"
@@ -39,96 +34,95 @@ jobs:
           test -d "$DEVKITARM"
           test -f "$DEVKITARM/ds_rules"
 
-          echo "Entorno devkitARM encontrado."
+          echo "Entorno devkitPro correcto."
 
-      # --------------------------------------------------
-      # 3. Instalar solamente las dependencias necesarias
-      # --------------------------------------------------
-      - name: Instalar dependencias Nintendo DS
+      - name: Comprobar compilador
         shell: bash
         run: |
-          echo "Actualizando bases de paquetes..."
-          dkp-pacman -Syy --noconfirm
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH"
 
-          echo "Instalando libnds..."
-          dkp-pacman -S --needed --noconfirm libnds
+          test -x "$DEVKITARM/bin/arm-none-eabi-g++"
+
+          "$DEVKITARM/bin/arm-none-eabi-g++" --version
+
+          echo "Compilador ARM encontrado."
+
+      - name: Preparar librerías DS
+        shell: bash
+        run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH"
 
           echo "Comprobando libnds..."
-          test -f /opt/devkitpro/libnds/include/nds.h
 
-          echo "libnds encontrado correctamente."
+          if [ ! -f "$DEVKITPRO/libnds/include/nds.h" ]; then
+            echo "libnds no está disponible. Instalando libnds..."
+            dkp-pacman -Syy --noconfirm
+            dkp-pacman -S --needed --noconfirm libnds
+          fi
 
-      # --------------------------------------------------
-      # 4. Comprobar compilador
-      # --------------------------------------------------
-      - name: Comprobar herramientas
+          test -f "$DEVKITPRO/libnds/include/nds.h"
+
+          echo "libnds disponible."
+
+      - name: Comprobar proyecto
         shell: bash
         run: |
-          echo "Comprobando arm-none-eabi-g++..."
-          command -v arm-none-eabi-g++
-
-          echo "Comprobando ndstool..."
-          command -v ndstool
-
-          echo "Comprobando ds_rules..."
-          test -f /opt/devkitpro/devkitARM/ds_rules
-
-          echo "Herramientas correctas."
-
-      # --------------------------------------------------
-      # 5. Mostrar estructura del proyecto
-      # --------------------------------------------------
-      - name: Comprobar archivos del proyecto
-        shell: bash
-        run: |
-          echo "=== ARCHIVOS ==="
+          echo "Contenido del proyecto:"
           find . -maxdepth 3 -type f -print
 
-          echo "=== MAKEFILE ==="
+          echo "Comprobando Makefile..."
           test -f Makefile
 
-          echo "=== MAIN ==="
-          test -f main.cpp || test -f source/main.cpp
+          echo "Comprobando código..."
 
-      # --------------------------------------------------
-      # 6. Compilar
-      # --------------------------------------------------
+          if [ -f main.cpp ]; then
+            echo "Encontrado: main.cpp"
+          elif [ -f source/main.cpp ]; then
+            echo "Encontrado: source/main.cpp"
+          else
+            echo "ERROR: no se encontró main.cpp"
+            exit 1
+          fi
+
       - name: Compilar DSi IA
         shell: bash
         run: |
-          echo "======================================"
-          echo "      COMPILANDO DSi IA"
-          echo "======================================"
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH="$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH"
+
+          echo "========================================"
+          echo "          COMPILANDO DSi IA"
+          echo "========================================"
 
           make V=1
 
-      # --------------------------------------------------
-      # 7. Buscar el NDS generado
-      # --------------------------------------------------
-      - name: Comprobar archivo NDS
+      - name: Verificar ROM
         shell: bash
         run: |
-          echo "Buscando archivos .nds..."
+          echo "Buscando archivo NDS..."
 
           find . -type f -name "*.nds" -print
 
           NDS_FILE=$(find . -type f -name "*.nds" | head -n 1)
 
           if [ -z "$NDS_FILE" ]; then
-            echo "ERROR: no se generó ningún archivo .nds"
+            echo "ERROR: MAKE terminó pero no generó ningún .nds"
             exit 1
           fi
 
-          echo "NDS encontrado:"
+          echo "ROM encontrada:"
           echo "$NDS_FILE"
 
           cp "$NDS_FILE" DSi-IA.nds
 
+          echo "Archivo final:"
           ls -lh DSi-IA.nds
 
-      # --------------------------------------------------
-      # 8. Guardar el NDS como Artifact
-      # --------------------------------------------------
       - name: Publicar DSi IA
         uses: actions/upload-artifact@v4
         with:
