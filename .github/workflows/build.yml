@@ -16,15 +16,21 @@ jobs:
       image: devkitpro/devkitarm:20241104
 
     steps:
+
+      # --------------------------------------------------
+      # 1. Descargar el proyecto
+      # --------------------------------------------------
       - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Preparar entorno
+      # --------------------------------------------------
+      # 2. Preparar variables de devkitPro
+      # --------------------------------------------------
+      - name: Preparar entorno devkitPro
         shell: bash
         run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
-          export PATH=/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:$PATH
 
           echo "DEVKITPRO=$DEVKITPRO"
           echo "DEVKITARM=$DEVKITARM"
@@ -33,57 +39,97 @@ jobs:
           test -d "$DEVKITARM"
           test -f "$DEVKITARM/ds_rules"
 
-      - name: Actualizar paquetes devkitPro
-        shell: bash
-        run: |
-          dkp-pacman -Syyu --noconfirm
+          echo "Entorno devkitARM encontrado."
 
-      - name: Eliminar filesystem antiguo
+      # --------------------------------------------------
+      # 3. Instalar solamente las dependencias necesarias
+      # --------------------------------------------------
+      - name: Instalar dependencias Nintendo DS
         shell: bash
         run: |
-          if dkp-pacman -Q libfilesystem >/dev/null 2>&1; then
-            echo "Eliminando libfilesystem antiguo..."
-            dkp-pacman -Rdd --noconfirm libfilesystem
-          else
-            echo "libfilesystem antiguo no está instalado."
-          fi
+          echo "Actualizando bases de paquetes..."
+          dkp-pacman -Syy --noconfirm
 
-      - name: Instalar entorno Nintendo DS
-        shell: bash
-        run: |
-          dkp-pacman -S --needed --noconfirm nds-dev
+          echo "Instalando libnds..."
+          dkp-pacman -S --needed --noconfirm libnds
 
-      - name: Verificar librerías Nintendo DS
-        shell: bash
-        run: |
-          echo "=== libnds ==="
+          echo "Comprobando libnds..."
           test -f /opt/devkitpro/libnds/include/nds.h
-          ls -l /opt/devkitpro/libnds/include/nds.h
 
-          echo "=== devkitARM ==="
+          echo "libnds encontrado correctamente."
+
+      # --------------------------------------------------
+      # 4. Comprobar compilador
+      # --------------------------------------------------
+      - name: Comprobar herramientas
+        shell: bash
+        run: |
+          echo "Comprobando arm-none-eabi-g++..."
+          command -v arm-none-eabi-g++
+
+          echo "Comprobando ndstool..."
+          command -v ndstool
+
+          echo "Comprobando ds_rules..."
           test -f /opt/devkitpro/devkitARM/ds_rules
 
-          echo "=== herramientas ==="
-          which arm-none-eabi-g++
-          which ndstool
+          echo "Herramientas correctas."
 
-          echo "Entorno DS correcto."
+      # --------------------------------------------------
+      # 5. Mostrar estructura del proyecto
+      # --------------------------------------------------
+      - name: Comprobar archivos del proyecto
+        shell: bash
+        run: |
+          echo "=== ARCHIVOS ==="
+          find . -maxdepth 3 -type f -print
 
+          echo "=== MAKEFILE ==="
+          test -f Makefile
+
+          echo "=== MAIN ==="
+          test -f main.cpp || test -f source/main.cpp
+
+      # --------------------------------------------------
+      # 6. Compilar
+      # --------------------------------------------------
       - name: Compilar DSi IA
         shell: bash
         run: |
-          make clean || true
+          echo "======================================"
+          echo "      COMPILANDO DSi IA"
+          echo "======================================"
+
           make V=1
 
-      - name: Buscar NDS generado
+      # --------------------------------------------------
+      # 7. Buscar el NDS generado
+      # --------------------------------------------------
+      - name: Comprobar archivo NDS
         shell: bash
         run: |
-          echo "Archivos NDS encontrados:"
+          echo "Buscando archivos .nds..."
+
           find . -type f -name "*.nds" -print
 
-          test -f DSi-IA.nds
+          NDS_FILE=$(find . -type f -name "*.nds" | head -n 1)
 
-      - name: Guardar DSi IA
+          if [ -z "$NDS_FILE" ]; then
+            echo "ERROR: no se generó ningún archivo .nds"
+            exit 1
+          fi
+
+          echo "NDS encontrado:"
+          echo "$NDS_FILE"
+
+          cp "$NDS_FILE" DSi-IA.nds
+
+          ls -lh DSi-IA.nds
+
+      # --------------------------------------------------
+      # 8. Guardar el NDS como Artifact
+      # --------------------------------------------------
+      - name: Publicar DSi IA
         uses: actions/upload-artifact@v4
         with:
           name: DSi-IA-NDS
