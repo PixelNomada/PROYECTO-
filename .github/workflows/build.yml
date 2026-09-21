@@ -1,4 +1,4 @@
-name: DSi-IA
+name: Compilar DSi IA
 
 on:
   workflow_dispatch:
@@ -9,21 +9,81 @@ on:
 
 jobs:
   build:
-    name: Compilar DSi-IA
+    name: Compilar Nintendo DS
     runs-on: ubuntu-latest
-    container: devkitpro/devkitarm:20241104
+
+    container:
+      image: devkitpro/devkitarm:20241104
 
     steps:
-      - name: Descargar codigo
+      - name: Descargar proyecto
         uses: actions/checkout@v4
 
-      - name: Instalar dependencias DS
-        run: dkp-pacman -Sy --noconfirm nds-dev
+      - name: Preparar entorno
+        shell: bash
+        run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH=/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:$PATH
 
-      - name: Compilar
-        run: make
+          echo "DEVKITPRO=$DEVKITPRO"
+          echo "DEVKITARM=$DEVKITARM"
 
-      - name: Publicar NDS
+          test -d "$DEVKITPRO"
+          test -d "$DEVKITARM"
+          test -f "$DEVKITARM/ds_rules"
+
+      - name: Actualizar paquetes devkitPro
+        shell: bash
+        run: |
+          dkp-pacman -Syyu --noconfirm
+
+      - name: Eliminar filesystem antiguo
+        shell: bash
+        run: |
+          if dkp-pacman -Q libfilesystem >/dev/null 2>&1; then
+            echo "Eliminando libfilesystem antiguo..."
+            dkp-pacman -Rdd --noconfirm libfilesystem
+          else
+            echo "libfilesystem antiguo no está instalado."
+          fi
+
+      - name: Instalar entorno Nintendo DS
+        shell: bash
+        run: |
+          dkp-pacman -S --needed --noconfirm nds-dev
+
+      - name: Verificar librerías Nintendo DS
+        shell: bash
+        run: |
+          echo "=== libnds ==="
+          test -f /opt/devkitpro/libnds/include/nds.h
+          ls -l /opt/devkitpro/libnds/include/nds.h
+
+          echo "=== devkitARM ==="
+          test -f /opt/devkitpro/devkitARM/ds_rules
+
+          echo "=== herramientas ==="
+          which arm-none-eabi-g++
+          which ndstool
+
+          echo "Entorno DS correcto."
+
+      - name: Compilar DSi IA
+        shell: bash
+        run: |
+          make clean || true
+          make V=1
+
+      - name: Buscar NDS generado
+        shell: bash
+        run: |
+          echo "Archivos NDS encontrados:"
+          find . -type f -name "*.nds" -print
+
+          test -f DSi-IA.nds
+
+      - name: Guardar DSi IA
         uses: actions/upload-artifact@v4
         with:
           name: DSi-IA-NDS
